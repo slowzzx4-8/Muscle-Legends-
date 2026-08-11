@@ -261,7 +261,7 @@ task.defer(function()
     task.wait(0.5)
     VexUI:Notification({
         Title = "!",
-        Desc = "Recomendado para server privado!!!",
+        Desc = "Recommended for private server!!!",
         Icon = "triangle-alert",
         Duration = 10,
     })
@@ -281,7 +281,7 @@ PlayerTab:Slider({ Title = "Jump Power", Value = {Min = 1, Max = 200, Default = 
 
 PlayerTab:Toggle({ Title = "Noclip", Desc = "Walk through walls without bugging.", Default = false, Callback = function(State) noclipEnabled = State end })
 PlayerTab:Toggle({ Title = "Infinite Jump", Desc = "Allows mid-air jumps.", Default = infiniteJumpEnabled, Callback = function(State) infiniteJumpEnabled = State end })
-PlayerTab:Toggle({ Title = "Anti Ragdoll", Desc = "Prevents falling down/tripping.", Default = antiRagdollEnabled, Callback = function(State) antiRagdollEnabled = State end })
+PlayerTab:Toggle({ Title = "Anti Ragdoll", Desc = "Prevents falling down tripping.", Default = antiRagdollEnabled, Callback = function(State) antiRagdollEnabled = State end })
 
 RunService.Stepped:Connect(function()
     if noclipEnabled then
@@ -311,7 +311,7 @@ end)
 AutomationTab:Section({Title = "Main Exploits"})
 AutomationTab:Toggle({ Title = "Auto Eat Block", Desc = "Fast eat exploit.", Default = eatEnabled, Callback = function(State) eatEnabled = State end })
 AutomationTab:Toggle({
-    Title = "Auto Grab (Sky Tween)",
+    Title = "Auto Grab",
     Desc = "Creates a black transparent platform 150 studs up.",
     Default = skyGrabEnabled,
     Callback = function(State)
@@ -452,7 +452,7 @@ Settings:Toggle({
 Settings:Section({Title = "Custom Background"})
 Settings:Input({
     Title = "Custom Background ID",
-    Desc = "Numbers only (e.g. 12345678) or rbxassetid://...",
+    Desc = "Numbers only ID",
     Value = customImageID,
     Callback = function(Text)
         local id = tostring(Text or ""):gsub("%s+", "")
