@@ -260,7 +260,7 @@ Window:SelectTab(1)
 task.defer(function()
     task.wait(0.5)
     VexUI:Notification({
-        Title = "!",
+        Title = "Notice!",
         Desc = "Recommended for private server!!!",
         Icon = "triangle-alert",
         Duration = 10,
@@ -362,7 +362,7 @@ EconomyTab:Toggle({
 })
 
 EconomyTab:Section({Title = "Event Snipers"})
-EconomyTab:Toggle({ Title = "Auto Collect Cubes", Desc = "Pega todos os cubos do mapa, inclusive de outros players.", Default = cubeCoinsEnabled, Callback = function(State) cubeCoinsEnabled = State end })
+EconomyTab:Toggle({ Title = "Auto Collect Cubes", Desc = "Collect all the cubes from the map..", Default = cubeCoinsEnabled, Callback = function(State) cubeCoinsEnabled = State end })
 EconomyTab:Toggle({ Title = "Auto Money Rain", Desc = "Summons money rain.", Default = autoMoneyRainEnabled, Callback = function(State) autoMoneyRainEnabled = State end })
 
 --==================================================
@@ -452,7 +452,7 @@ Settings:Toggle({
 Settings:Section({Title = "Custom Background"})
 Settings:Input({
     Title = "Custom Background ID",
-    Desc = "Numbers only (e.g. 12345678) or rbxassetid://...",
+    Desc = "Numbers only ID ,
     Value = customImageID,
     Callback = function(Text)
         local id = tostring(Text or ""):gsub("%s+", "")
