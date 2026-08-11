@@ -452,7 +452,7 @@ Settings:Toggle({
 Settings:Section({Title = "Custom Background"})
 Settings:Input({
     Title = "Custom Background ID",
-    Desc = "Numbers only ID ,
+    Desc = "Numbers only ID",
     Value = customImageID,
     Callback = function(Text)
         local id = tostring(Text or ""):gsub("%s+", "")
