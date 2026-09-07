@@ -1,1 +1,408 @@
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- VARIÁVEIS DE CONTROLE GLOBAIS
+-- ==========================================
+local bossFarmActive = false
+local autoRebirth = false
+local autoForca = false
+
+local autoJoin = false
+local autoKill = false
+local autoReset = false
+local alvosValidos = {} 
+local modosDeAtaque = {"Punch", "Stomp", "Ground Slam"}
+local indexAtaque = 1
+local currentAttackMode = modosDeAtaque[indexAtaque]
+
+local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
+local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
+
+-- ==========================================
+-- 1. CRIAÇÃO DAS ÁREAS INVISÍVEIS (BRAWL)
+-- ==========================================
+local function criarAreaInvisivel(nome, posX, posY, posZ, sizeX, sizeY, sizeZ)
+    if workspace:FindFirstChild(nome) then workspace[nome]:Destroy() end
+    local part = Instance.new("Part")
+    part.Name = nome
+    part.Size = Vector3.new(sizeX, sizeY, sizeZ)
+    part.Position = Vector3.new(posX, posY, posZ)
+    part.Anchored = true
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Parent = workspace
+    return part
+end
+
+local Area1 = criarAreaInvisivel("BrawlArea1", 4465, 177, -8851, 552, 400, 548)
+local Area2 = criarAreaInvisivel("BrawlArea2", -1856.5, 175, -6315, 499, 400, 496)
+local Area3 = criarAreaInvisivel("BrawlArea3", 978, 177, -7433, 502, 400, 504)
+
+local function isDentroDasAreas(posicao)
+    local areas = {Area1, Area2, Area3}
+    for _, area in ipairs(areas) do
+        local offset = area.CFrame:PointToObjectSpace(posicao)
+        local size = area.Size
+        if math.abs(offset.X) <= size.X/2 and math.abs(offset.Y) <= size.Y/2 and math.abs(offset.Z) <= size.Z/2 then
+            return true
+        end
+    end
+    return false
+end
+
+-- ==========================================
+-- 2. INTERFACE GRÁFICA UNIFICADA (HUB)
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ProSupremeHub"
+screenGui.ResetOnSpawn = false
+local success = pcall(function() screenGui.Parent = CoreGui end)
+if not success then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 340)
+frame.AnchorPoint = Vector2.new(1, 0)
+frame.Position = UDim2.new(1, -20, 0.15, 0)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.Active = true
+frame.Parent = screenGui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local frameStroke = Instance.new("UIStroke")
+frameStroke.Color = Color3.fromRGB(80, 80, 80)
+frameStroke.Thickness = 1.5
+frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+frameStroke.Parent = frame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 30)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "SUPREME HUB"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.Font = Enum.Font.GothamBlack
+titleLabel.TextSize = 15
+titleLabel.Parent = frame
+
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(1, 0, 0, 1)
+divider.Position = UDim2.new(0, 0, 0, 30)
+divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+divider.BorderSizePixel = 0
+divider.Parent = frame
+
+local function criarBotao(nome, pos_Y, textoInit, corNormal, corBorda)
+    local btn = Instance.new("TextButton")
+    btn.Name = nome
+    btn.Size = UDim2.new(1, -20, 0, 35)
+    btn.Position = UDim2.new(0, 10, 0, pos_Y)
+    btn.BackgroundColor3 = corNormal
+    btn.Text = textoInit
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.AutoButtonColor = true
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = corBorda
+    stroke.Thickness = 1
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = btn
+    return btn, stroke
+end
+
+local BossBtn, BossStroke       = criarBotao("BossBtn", 40, "[BOSS] Farm: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local JoinBtn, JoinStroke       = criarBotao("JoinBtn", 80, "[BRAWL] Auto Join: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local KillBtn, KillStroke       = criarBotao("KillBtn", 120, "[BRAWL] Auto Kill: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local ModeBtn, ModeStroke       = criarBotao("ModeBtn", 160, "Modo: Punch", Color3.fromRGB(50, 100, 180), Color3.fromRGB(30, 60, 120))
+local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win Reset: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local ForcaBtn, ForcaStroke     = criarBotao("ForcaBtn", 280, "[FARM] Auto Força 50M: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+
+local dragging, dragInput, mousePos, framePos
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; mousePos = input.Position; framePos = frame.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+    end
+end)
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - mousePos
+        frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+    end
+end)
+
+local function toggleButton(btn, stroke, state, textPrefix)
+    btn.BackgroundColor3 = state and Color3.fromRGB(50, 180, 50) or Color3.fromRGB(180, 50, 50)
+    stroke.Color = state and Color3.fromRGB(30, 120, 30) or Color3.fromRGB(120, 30, 30)
+    btn.Text = textPrefix .. (state and "ON" or "OFF")
+end
+
+BossBtn.MouseButton1Click:Connect(function() bossFarmActive = not bossFarmActive; toggleButton(BossBtn, BossStroke, bossFarmActive, "[BOSS] Farm: ") end)
+JoinBtn.MouseButton1Click:Connect(function() autoJoin = not autoJoin; toggleButton(JoinBtn, JoinStroke, autoJoin, "[BRAWL] Auto Join: ") end)
+KillBtn.MouseButton1Click:Connect(function() autoKill = not autoKill; toggleButton(KillBtn, KillStroke, autoKill, "[BRAWL] Auto Kill: ") end)
+ResetBtn.MouseButton1Click:Connect(function() autoReset = not autoReset; toggleButton(ResetBtn, ResetStroke, autoReset, "[BRAWL] Auto Win Reset: ") end)
+RebirthBtn.MouseButton1Click:Connect(function() autoRebirth = not autoRebirth; toggleButton(RebirthBtn, RebirthStroke, autoRebirth, "[FARM] Auto Rebirth: ") end)
+ForcaBtn.MouseButton1Click:Connect(function() autoForca = not autoForca; toggleButton(ForcaBtn, ForcaStroke, autoForca, "[FARM] Auto Força 50M: ") end)
+
+ModeBtn.MouseButton1Click:Connect(function()
+    indexAtaque = indexAtaque + 1
+    if indexAtaque > #modosDeAtaque then indexAtaque = 1 end
+    currentAttackMode = modosDeAtaque[indexAtaque]
+    ModeBtn.Text = "Modo: " .. currentAttackMode
+end)
+
+-- ==========================================
+-- 3. FUNÇÕES UTILITÁRIAS E INTELIGÊNCIA GERAL
+-- ==========================================
+local function equiparTool(nomeTool)
+    local character = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if character and backpack then
+        local tool = backpack:FindFirstChild(nomeTool) or character:FindFirstChild(nomeTool)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if tool and humanoid and not character:FindFirstChild(nomeTool) then 
+            humanoid:EquipTool(tool) 
+        end
+    end
+end
+
+local function converterForca(jogador)
+    if not jogador or not jogador:FindFirstChild("leaderstats") or not jogador.leaderstats:FindFirstChild("Strength") then return 0 end
+    local str = string.lower(string.gsub(string.gsub(tostring(jogador.leaderstats.Strength.Value), ",", ""), " ", ""))
+    local numero, sufixo = string.match(str, "^([%d%.]+)([a-z]*)$")
+    if not numero then return 0 end
+    return (tonumber(numero) or 0) * (multiplicadores[sufixo] or 1)
+end
+
+local function getActiveBoss()
+    local events = workspace:FindFirstChild("Events")
+    local arena = events and events:FindFirstChild("BossArena")
+    if arena then
+        for _, child in ipairs(arena:GetChildren()) do
+            if string.find(child.Name, "Boss") and child:FindFirstChild("Humanoid") and child.Humanoid.Health > 0 then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
+local function isInBrawl()
+    local currentMap = LocalPlayer:FindFirstChild("currentMap")
+    return (currentMap and mapasAlvo[currentMap.Value])
+end
+
+-- ==========================================
+-- 4. SISTEMAS DE FARM SECUNDÁRIO (FORÇA E REBIRTH)
+-- ==========================================
+-- Loop Auto Força 50M (Ativa SOMENTE quando Boss aparece se estiver < 50M)
+task.spawn(function()
+    while task.wait(0.1) do
+        if autoForca and getActiveBoss() and not isInBrawl() then
+            if converterForca(LocalPlayer) < 50000000 then
+                equiparTool("Pushups")
+                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Pushups")
+                if tool then tool:Activate() end
+                pcall(function() LocalPlayer.muscleEvent:FireServer("rep") end)
+            end
+        end
+    end
+end)
+
+-- Loop Auto Rebirth (Ativa quando NÃO tem Boss)
+task.spawn(function()
+    while task.wait(0.1) do
+        if autoRebirth and not getActiveBoss() and not isInBrawl() then
+            equiparTool("Weight")
+            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Weight")
+            if tool then tool:Activate() end
+            pcall(function() LocalPlayer.muscleEvent:FireServer("rep") end)
+        end
+    end
+end)
+
+-- Invoca Rebirth a cada 3s (Apenas quando não tem Boss)
+task.spawn(function()
+    while task.wait(3) do
+        if autoRebirth and not getActiveBoss() and not isInBrawl() then
+            pcall(function() ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end)
+        end
+    end
+end)
+
+-- ==========================================
+-- 5. SISTEMA DO BOSS PRINCIPAL
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.05) do
+        if bossFarmActive and not isInBrawl() then
+            local bossAtivo = getActiveBoss()
+            
+            if bossAtivo then
+                -- Se o Boss existir, e Auto Força estiver ligada mas ainda não tiver 50M, NÃO VÁ ATÉ ELE AINDA.
+                if autoForca and converterForca(LocalPlayer) < 50000000 then
+                    -- Fica parado farmando Pushups
+                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                        LocalPlayer.Character.Humanoid.AutoRotate = true
+                    end
+                    continue 
+                end
+                
+                -- Se tiver 50M (ou Auto Força 50M tiver desligado), VAI CAÇAR O BOSS
+                local character = LocalPlayer.Character
+                if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+                    local humanoid = character.Humanoid
+                    local myRoot = character:FindFirstChild("HumanoidRootPart")
+                    local arena = workspace:FindFirstChild("Events") and workspace.Events:FindFirstChild("BossArena")
+                    local cylinder = arena and arena:FindFirstChild("Arena1") and arena.Arena1:FindFirstChild("Cylinder.007")
+
+                    if cylinder and myRoot then
+                        humanoid.AutoRotate = false 
+                        local bossRoot = bossAtivo:FindFirstChild("Torso") or bossAtivo:FindFirstChild("HumanoidRootPart") or bossAtivo.PrimaryPart
+                        
+                        if bossRoot then
+                            local distancia = 10 
+                            local desiredPos = bossRoot.Position - (bossRoot.CFrame.LookVector * distancia)
+                            
+                            local center = cylinder.Position
+                            local maxRadius = (math.min(cylinder.Size.X, cylinder.Size.Z) / 2) * 0.90 
+                            local offset = desiredPos - center
+                            local flatOffset = Vector3.new(offset.X, 0, offset.Z) 
+                            
+                            if flatOffset.Magnitude > maxRadius then
+                                flatOffset = flatOffset.Unit * maxRadius
+                                desiredPos = Vector3.new(center.X + flatOffset.X, desiredPos.Y, center.Z + flatOffset.Z)
+                            end
+                            
+                            humanoid:MoveTo(desiredPos)
+                            myRoot.CFrame = CFrame.lookAt(myRoot.Position, Vector3.new(bossRoot.Position.X, myRoot.Position.Y, bossRoot.Position.Z))
+                            
+                            equiparTool("Punch") 
+                            local tool = character:FindFirstChild("Punch")
+                            if tool then tool:Activate() end
+                            pcall(function()
+                                LocalPlayer.muscleEvent:FireServer("punch", "leftHand")
+                                LocalPlayer.muscleEvent:FireServer("punch", "rightHand")
+                            end)
+                        end
+                    end
+                end
+            else
+                -- BOSS NÃO EXISTE: Libera rotação e não se move pra arena (pode ficar parado upando weight)
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                    LocalPlayer.Character.Humanoid.AutoRotate = true
+                end
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- 6. SISTEMA BRAWL (JOIN, KILL, RESET)
+-- ==========================================
+local function atualizarAlvos(player, nomeDoMapa)
+    if mapasAlvo[nomeDoMapa] and player ~= LocalPlayer then alvosValidos[player] = true else alvosValidos[player] = nil end
+end
+local function monitorarJogador(player)
+    if player == LocalPlayer then return end
+    local currentMap = player:WaitForChild("currentMap", 10)
+    if currentMap then
+        atualizarAlvos(player, currentMap.Value)
+        currentMap:GetPropertyChangedSignal("Value"):Connect(function() atualizarAlvos(player, currentMap.Value) end)
+    end
+end
+for _, player in ipairs(Players:GetPlayers()) do task.spawn(monitorarJogador, player) end
+Players.PlayerAdded:Connect(function(p) task.spawn(monitorarJogador, p) end)
+Players.PlayerRemoving:Connect(function(p) alvosValidos[p] = nil end)
+
+local function atacarBrawlAlvo()
+    local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+    if not muscleEvent then return end
+
+    if currentAttackMode == "Punch" then
+        equiparTool("Punch")
+        pcall(function() muscleEvent:FireServer("punch", "leftHand"); muscleEvent:FireServer("punch", "rightHand") end)
+    elseif currentAttackMode == "Stomp" then
+        equiparTool("Stomp")
+        pcall(function() muscleEvent:FireServer("stomp") end)
+    elseif currentAttackMode == "Ground Slam" then
+        equiparTool("Ground Slam")
+        pcall(function() muscleEvent:FireServer("groundSlam") end)
+    end
+end
+
+-- Loop Auto Join (Para de entrar se o Boss aparecer)
+task.spawn(function()
+    while task.wait(0.5) do
+        if autoJoin and not getActiveBoss() then
+            pcall(function() ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end)
+        end
+    end
+end)
+
+-- Loop Auto Reset Win
+task.spawn(function()
+    while task.wait(0.5) do
+        if autoReset then
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if pGui and pGui:FindFirstChild("gameGui") then
+                local survivorBonus = pGui.gameGui:FindFirstChild("survivorBonusLabel")
+                if survivorBonus and survivorBonus.Visible then
+                    local myChar = LocalPlayer.Character
+                    if myChar and myChar:FindFirstChild("Humanoid") and myChar.Humanoid.Health > 0 then
+                        myChar.Humanoid.Health = 0 
+                        task.wait(5) 
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Loop Auto Kill
+task.spawn(function()
+    while task.wait(0.05) do 
+        if autoKill and isInBrawl() then
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            
+            if myRoot then
+                local listaOrdenada = {}
+                for alvo, _ in pairs(alvosValidos) do
+                    if alvo.Character and alvo.Character:FindFirstChild("HumanoidRootPart") and alvo.Character:FindFirstChild("Humanoid") and alvo.Character.Humanoid.Health > 0 then
+                        local targetRoot = alvo.Character.HumanoidRootPart
+                        if isDentroDasAreas(targetRoot.Position) then
+                            table.insert(listaOrdenada, { target = alvo, root = targetRoot, force = converterForca(alvo) })
+                        end
+                    else
+                        alvosValidos[alvo] = nil
+                    end
+                end
+                
+                if #listaOrdenada > 0 then
+                    table.sort(listaOrdenada, function(a, b) return a.force < b.force end)
+                    local alvoAtual = listaOrdenada[1]
+                    
+                    if alvoAtual then
+                        myRoot.Velocity = Vector3.new(0,0,0)
+                        myRoot.RotVelocity = Vector3.new(0,0,0)
+                        myRoot.CFrame = alvoAtual.root.CFrame * CFrame.new(0, 0, 3)
+                        atacarBrawlAlvo()
+                    end
+                end
+            end
+        end
+    end
+end)
 
