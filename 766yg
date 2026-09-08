@@ -34,8 +34,8 @@ local currentAttackMode = modosDeAtaque[indexAtaque]
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
 
--- Lista de Bosses 
-local validBossNames = {"Boss2", "Boss1"}
+-- Lista de Bosses atualizada com Boss3
+local validBossNames = {"Boss3", "Boss2", "Boss1"}
 
 -- ==========================================
 -- 1. CRIAÇÃO DAS ÁREAS INVISÍVEIS (BRAWL)
@@ -177,7 +177,7 @@ ModeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- 3. FUNÇÕES DE UTILIDADE E BUSCA (BOSS 1 e 2)
+-- 3. FUNÇÕES DE UTILIDADE E BUSCA (BOSSES)
 -- ==========================================
 local function equiparTool(toolName)
     local character = LocalPlayer.Character
