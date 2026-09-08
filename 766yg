@@ -7,6 +7,16 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
+-- REMOÇÃO DE PORTAIS
+-- ==========================================
+pcall(function()
+    local portals = workspace:FindFirstChild("RobloxForwardPortals")
+    if portals then
+        portals:Destroy()
+    end
+end)
+
+-- ==========================================
 -- VARIÁVEIS DE CONTROLE GLOBAIS
 -- ==========================================
 local bossFarmActive = false
@@ -23,6 +33,9 @@ local currentAttackMode = modosDeAtaque[indexAtaque]
 
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
+
+-- Lista de Bosses 
+local validBossNames = {"Boss2", "Boss1"}
 
 -- ==========================================
 -- 1. CRIAÇÃO DAS ÁREAS INVISÍVEIS (BRAWL)
@@ -125,6 +138,7 @@ local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win 
 local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
 local ForcaBtn, ForcaStroke     = criarBotao("ForcaBtn", 280, "[FARM] Auto Força 50M: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
 
+-- Arrastar Interface
 local dragging, dragInput, mousePos, framePos
 frame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -163,18 +177,27 @@ ModeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- 3. FUNÇÕES UTILITÁRIAS E INTELIGÊNCIA GERAL
+-- 3. FUNÇÕES DE UTILIDADE E BUSCA (BOSS 1 e 2)
 -- ==========================================
-local function equiparTool(nomeTool)
+local function equiparTool(toolName)
     local character = LocalPlayer.Character
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if character and backpack then
-        local tool = backpack:FindFirstChild(nomeTool) or character:FindFirstChild(nomeTool)
+        local tool = backpack:FindFirstChild(toolName) or character:FindFirstChild(toolName)
         local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if tool and humanoid and not character:FindFirstChild(nomeTool) then 
+        if tool and humanoid and not character:FindFirstChild(toolName) then 
             humanoid:EquipTool(tool) 
         end
     end
+end
+
+local function getPosition(instance)
+    if instance:IsA("Model") then
+        return instance:GetPivot().Position
+    elseif instance:IsA("BasePart") then
+        return instance.Position
+    end
+    return nil
 end
 
 local function converterForca(jogador)
@@ -185,13 +208,20 @@ local function converterForca(jogador)
     return (tonumber(numero) or 0) * (multiplicadores[sufixo] or 1)
 end
 
-local function getActiveBoss()
+-- Busca os Bosses da lista dentro de BossArena
+local function getActiveBossTarget()
     local events = workspace:FindFirstChild("Events")
     local arena = events and events:FindFirstChild("BossArena")
+    
     if arena then
-        for _, child in ipairs(arena:GetChildren()) do
-            if string.find(child.Name, "Boss") and child:FindFirstChild("Humanoid") and child.Humanoid.Health > 0 then
-                return child
+        for _, bossName in ipairs(validBossNames) do
+            local boss = arena:FindFirstChild(bossName)
+            if boss then
+                local isAlive = true
+                if boss:FindFirstChild("Humanoid") and boss.Humanoid.Health <= 0 then
+                    isAlive = false
+                end
+                if isAlive then return boss end
             end
         end
     end
@@ -204,12 +234,12 @@ local function isInBrawl()
 end
 
 -- ==========================================
--- 4. SISTEMAS DE FARM SECUNDÁRIO (FORÇA E REBIRTH)
+-- 4. SISTEMAS DE FARM (REBIRTH E FORÇA 50M)
 -- ==========================================
--- Loop Auto Força 50M (Ativa SOMENTE quando Boss aparece se estiver < 50M)
+-- Auto Força 50M
 task.spawn(function()
     while task.wait(0.1) do
-        if autoForca and getActiveBoss() and not isInBrawl() then
+        if autoForca and getActiveBossTarget() and not isInBrawl() then
             if converterForca(LocalPlayer) < 50000000 then
                 equiparTool("Pushups")
                 local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Pushups")
@@ -220,10 +250,10 @@ task.spawn(function()
     end
 end)
 
--- Loop Auto Rebirth (Ativa quando NÃO tem Boss)
+-- Auto Rebirth 
 task.spawn(function()
     while task.wait(0.1) do
-        if autoRebirth and not getActiveBoss() and not isInBrawl() then
+        if autoRebirth and not getActiveBossTarget() and not isInBrawl() then
             equiparTool("Weight")
             local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Weight")
             if tool then tool:Activate() end
@@ -232,76 +262,62 @@ task.spawn(function()
     end
 end)
 
--- Invoca Rebirth a cada 3s (Apenas quando não tem Boss)
 task.spawn(function()
     while task.wait(3) do
-        if autoRebirth and not getActiveBoss() and not isInBrawl() then
+        if autoRebirth and not getActiveBossTarget() and not isInBrawl() then
             pcall(function() ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end)
         end
     end
 end)
 
 -- ==========================================
--- 5. SISTEMA DO BOSS PRINCIPAL
+-- 5. SISTEMA DO BOSS PRINCIPAL 
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.05) do
+    while task.wait(0.1) do
         if bossFarmActive and not isInBrawl() then
-            local bossAtivo = getActiveBoss()
+            local boss = getActiveBossTarget()
+            local character = LocalPlayer.Character
             
-            if bossAtivo then
-                -- Se o Boss existir, e Auto Força estiver ligada mas ainda não tiver 50M, NÃO VÁ ATÉ ELE AINDA.
-                if autoForca and converterForca(LocalPlayer) < 50000000 then
-                    -- Fica parado farmando Pushups
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                        LocalPlayer.Character.Humanoid.AutoRotate = true
-                    end
-                    continue 
-                end
+            if boss and autoForca and converterForca(LocalPlayer) < 50000000 then
+                continue
+            end
+            
+            if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+                local humanoid = character.Humanoid
+                local events = workspace:FindFirstChild("Events")
+                local arena = events and events:FindFirstChild("BossArena")
                 
-                -- Se tiver 50M (ou Auto Força 50M tiver desligado), VAI CAÇAR O BOSS
-                local character = LocalPlayer.Character
-                if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
-                    local humanoid = character.Humanoid
-                    local myRoot = character:FindFirstChild("HumanoidRootPart")
-                    local arena = workspace:FindFirstChild("Events") and workspace.Events:FindFirstChild("BossArena")
-                    local cylinder = arena and arena:FindFirstChild("Arena1") and arena.Arena1:FindFirstChild("Cylinder.007")
-
-                    if cylinder and myRoot then
-                        humanoid.AutoRotate = false 
-                        local bossRoot = bossAtivo:FindFirstChild("Torso") or bossAtivo:FindFirstChild("HumanoidRootPart") or bossAtivo.PrimaryPart
-                        
+                if arena then
+                    if boss then
+                        local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart or boss:FindFirstChildWhichIsA("BasePart")
                         if bossRoot then
-                            local distancia = 10 
-                            local desiredPos = bossRoot.Position - (bossRoot.CFrame.LookVector * distancia)
+                            local distanciaCostas = 4.5 
+                            local posicaoCostas = bossRoot.Position - (bossRoot.CFrame.LookVector * distanciaCostas)
                             
-                            local center = cylinder.Position
-                            local maxRadius = (math.min(cylinder.Size.X, cylinder.Size.Z) / 2) * 0.90 
-                            local offset = desiredPos - center
-                            local flatOffset = Vector3.new(offset.X, 0, offset.Z) 
+                            humanoid:MoveTo(posicaoCostas)
                             
-                            if flatOffset.Magnitude > maxRadius then
-                                flatOffset = flatOffset.Unit * maxRadius
-                                desiredPos = Vector3.new(center.X + flatOffset.X, desiredPos.Y, center.Z + flatOffset.Z)
-                            end
-                            
-                            humanoid:MoveTo(desiredPos)
-                            myRoot.CFrame = CFrame.lookAt(myRoot.Position, Vector3.new(bossRoot.Position.X, myRoot.Position.Y, bossRoot.Position.Z))
-                            
-                            equiparTool("Punch") 
+                            equiparTool("Punch")
                             local tool = character:FindFirstChild("Punch")
                             if tool then tool:Activate() end
-                            pcall(function()
-                                LocalPlayer.muscleEvent:FireServer("punch", "leftHand")
-                                LocalPlayer.muscleEvent:FireServer("punch", "rightHand")
-                            end)
+                            
+                            local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+                            if muscleEvent then
+                                pcall(function()
+                                    muscleEvent:FireServer("punch", "leftHand")
+                                    muscleEvent:FireServer("punch", "rightHand")
+                                end)
+                            end
+                        end
+                    else
+                        local bossSpawn = arena:FindFirstChild("BossSpawn")
+                        if bossSpawn then
+                            local spawnPos = getPosition(bossSpawn)
+                            if spawnPos then
+                                humanoid:MoveTo(spawnPos)
+                            end
                         end
                     end
-                end
-            else
-                -- BOSS NÃO EXISTE: Libera rotação e não se move pra arena (pode ficar parado upando weight)
-                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-                    LocalPlayer.Character.Humanoid.AutoRotate = true
                 end
             end
         end
@@ -342,16 +358,14 @@ local function atacarBrawlAlvo()
     end
 end
 
--- Loop Auto Join (Para de entrar se o Boss aparecer)
 task.spawn(function()
     while task.wait(0.5) do
-        if autoJoin and not getActiveBoss() then
+        if autoJoin and not getActiveBossTarget() then
             pcall(function() ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end)
         end
     end
 end)
 
--- Loop Auto Reset Win
 task.spawn(function()
     while task.wait(0.5) do
         if autoReset then
@@ -370,7 +384,6 @@ task.spawn(function()
     end
 end)
 
--- Loop Auto Kill
 task.spawn(function()
     while task.wait(0.05) do 
         if autoKill and isInBrawl() then
@@ -405,4 +418,3 @@ task.spawn(function()
         end
     end
 end)
-
