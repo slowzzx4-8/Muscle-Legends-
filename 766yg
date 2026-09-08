@@ -7,25 +7,26 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ==========================================
--- REMOÇÃO DE PORTAIS
+-- LIMPEZA DO MAPA (REMOÇÃO DE OBSTÁCULOS/PORTAIS)
 -- ==========================================
+pcall(function() workspace.Events.BossArena.RefreshBoss:Destroy() end)
+pcall(function() workspace.PetMachine:Destroy() end)
+pcall(function() workspace.Events.BossArena.Board:Destroy() end)
 pcall(function()
     local portals = workspace:FindFirstChild("RobloxForwardPortals")
-    if portals then
-        portals:Destroy()
-    end
+    if portals then portals:Destroy() end
 end)
 
 -- ==========================================
 -- VARIÁVEIS DE CONTROLE GLOBAIS
 -- ==========================================
-local bossFarmActive = false
-local autoRebirth = false
-local autoForca = false
+local bossFarmActive = true
+local autoRebirth = true
+local autoPrompt = true
 
-local autoJoin = false
-local autoKill = false
-local autoReset = false
+local autoJoin = true
+local autoKill = true
+local autoReset = true
 local alvosValidos = {} 
 local modosDeAtaque = {"Punch", "Stomp", "Ground Slam"}
 local indexAtaque = 1
@@ -34,8 +35,27 @@ local currentAttackMode = modosDeAtaque[indexAtaque]
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
 
--- Lista de Bosses atualizada com Boss3
-local validBossNames = {"Boss3", "Boss2", "Boss1"}
+-- Lista de Bosses Completa (Ordem de prioridade)
+local validBossNames = {"Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
+
+-- ==========================================
+-- CUSTOM SPAWN (NOVO LOCAL DE RENASCIMENTO)
+-- ==========================================
+local function teleportarParaSpawn(character)
+    local hrp = character:WaitForChild("HumanoidRootPart", 5)
+    if hrp then
+        -- Teleporta instantaneamente para o local desejado ao nascer
+        hrp.CFrame = CFrame.new(0, 73, -1248)
+    end
+end
+
+-- Teleporta assim que executar o script
+if LocalPlayer.Character then teleportarParaSpawn(LocalPlayer.Character) end
+
+-- Conecta para teleportar sempre que morrer e renascer
+LocalPlayer.CharacterAdded:Connect(function(character)
+    teleportarParaSpawn(character)
+end)
 
 -- ==========================================
 -- 1. CRIAÇÃO DAS ÁREAS INVISÍVEIS (BRAWL)
@@ -136,7 +156,7 @@ local KillBtn, KillStroke       = criarBotao("KillBtn", 120, "[BRAWL] Auto Kill:
 local ModeBtn, ModeStroke       = criarBotao("ModeBtn", 160, "Modo: Punch", Color3.fromRGB(50, 100, 180), Color3.fromRGB(30, 60, 120))
 local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win Reset: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
 local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
-local ForcaBtn, ForcaStroke     = criarBotao("ForcaBtn", 280, "[FARM] Auto Força 50M: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local PromptBtn, PromptStroke   = criarBotao("PromptBtn", 280, "[MISC] Auto Prompt: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
 
 -- Arrastar Interface
 local dragging, dragInput, mousePos, framePos
@@ -167,7 +187,7 @@ JoinBtn.MouseButton1Click:Connect(function() autoJoin = not autoJoin; toggleButt
 KillBtn.MouseButton1Click:Connect(function() autoKill = not autoKill; toggleButton(KillBtn, KillStroke, autoKill, "[BRAWL] Auto Kill: ") end)
 ResetBtn.MouseButton1Click:Connect(function() autoReset = not autoReset; toggleButton(ResetBtn, ResetStroke, autoReset, "[BRAWL] Auto Win Reset: ") end)
 RebirthBtn.MouseButton1Click:Connect(function() autoRebirth = not autoRebirth; toggleButton(RebirthBtn, RebirthStroke, autoRebirth, "[FARM] Auto Rebirth: ") end)
-ForcaBtn.MouseButton1Click:Connect(function() autoForca = not autoForca; toggleButton(ForcaBtn, ForcaStroke, autoForca, "[FARM] Auto Força 50M: ") end)
+PromptBtn.MouseButton1Click:Connect(function() autoPrompt = not autoPrompt; toggleButton(PromptBtn, PromptStroke, autoPrompt, "[MISC] Auto Prompt: ") end)
 
 ModeBtn.MouseButton1Click:Connect(function()
     indexAtaque = indexAtaque + 1
@@ -177,7 +197,7 @@ ModeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- 3. FUNÇÕES DE UTILIDADE E BUSCA (BOSSES)
+-- 3. FUNÇÕES DE UTILIDADE E VELOCIDADE DE ANIMAÇÃO
 -- ==========================================
 local function equiparTool(toolName)
     local character = LocalPlayer.Character
@@ -191,6 +211,20 @@ local function equiparTool(toolName)
     end
 end
 
+-- Acelera o PUNCH
+local function acelerarAnimacoes(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if animator then
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                -- Aumenta a velocidade da animação do soco para 4x mais rápido
+                track:AdjustSpeed(4) 
+            end
+        end
+    end
+end
+
 local function getPosition(instance)
     if instance:IsA("Model") then
         return instance:GetPivot().Position
@@ -200,15 +234,7 @@ local function getPosition(instance)
     return nil
 end
 
-local function converterForca(jogador)
-    if not jogador or not jogador:FindFirstChild("leaderstats") or not jogador.leaderstats:FindFirstChild("Strength") then return 0 end
-    local str = string.lower(string.gsub(string.gsub(tostring(jogador.leaderstats.Strength.Value), ",", ""), " ", ""))
-    local numero, sufixo = string.match(str, "^([%d%.]+)([a-z]*)$")
-    if not numero then return 0 end
-    return (tonumber(numero) or 0) * (multiplicadores[sufixo] or 1)
-end
-
--- Busca os Bosses da lista dentro de BossArena
+-- Busca os Bosses da lista
 local function getActiveBossTarget()
     local events = workspace:FindFirstChild("Events")
     local arena = events and events:FindFirstChild("BossArena")
@@ -234,17 +260,16 @@ local function isInBrawl()
 end
 
 -- ==========================================
--- 4. SISTEMAS DE FARM (REBIRTH E FORÇA 50M)
+-- 4. SISTEMAS MISC (PROMPT E REBIRTH)
 -- ==========================================
--- Auto Força 50M
+-- Auto Prompt 
 task.spawn(function()
-    while task.wait(0.1) do
-        if autoForca and getActiveBossTarget() and not isInBrawl() then
-            if converterForca(LocalPlayer) < 50000000 then
-                equiparTool("Pushups")
-                local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Pushups")
-                if tool then tool:Activate() end
-                pcall(function() LocalPlayer.muscleEvent:FireServer("rep") end)
+    while task.wait(0.05) do
+        if autoPrompt then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") and obj.Enabled then
+                    pcall(function() fireproximityprompt(obj, 1, true) end)
+                end
             end
         end
     end
@@ -279,10 +304,6 @@ task.spawn(function()
             local boss = getActiveBossTarget()
             local character = LocalPlayer.Character
             
-            if boss and autoForca and converterForca(LocalPlayer) < 50000000 then
-                continue
-            end
-            
             if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
                 local humanoid = character.Humanoid
                 local events = workspace:FindFirstChild("Events")
@@ -299,7 +320,10 @@ task.spawn(function()
                             
                             equiparTool("Punch")
                             local tool = character:FindFirstChild("Punch")
-                            if tool then tool:Activate() end
+                            if tool then 
+                                tool:Activate() 
+                                acelerarAnimacoes(character) -- Ativa a velocidade 4x no soco
+                            end
                             
                             local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
                             if muscleEvent then
@@ -342,12 +366,17 @@ for _, player in ipairs(Players:GetPlayers()) do task.spawn(monitorarJogador, pl
 Players.PlayerAdded:Connect(function(p) task.spawn(monitorarJogador, p) end)
 Players.PlayerRemoving:Connect(function(p) alvosValidos[p] = nil end)
 
-local function atacarBrawlAlvo()
+local function atacarBrawlAlvo(character)
     local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
     if not muscleEvent then return end
 
     if currentAttackMode == "Punch" then
         equiparTool("Punch")
+        local tool = character:FindFirstChild("Punch")
+        if tool then 
+            tool:Activate()
+            acelerarAnimacoes(character) -- Velocidade rápida no Brawl também
+        end
         pcall(function() muscleEvent:FireServer("punch", "leftHand"); muscleEvent:FireServer("punch", "rightHand") end)
     elseif currentAttackMode == "Stomp" then
         equiparTool("Stomp")
@@ -396,7 +425,8 @@ task.spawn(function()
                     if alvo.Character and alvo.Character:FindFirstChild("HumanoidRootPart") and alvo.Character:FindFirstChild("Humanoid") and alvo.Character.Humanoid.Health > 0 then
                         local targetRoot = alvo.Character.HumanoidRootPart
                         if isDentroDasAreas(targetRoot.Position) then
-                            table.insert(listaOrdenada, { target = alvo, root = targetRoot, force = converterForca(alvo) })
+                            -- Força bruta ignorada na ordenação pois 50M foi removido, focamos apenas em distância ou alvos válidos
+                            table.insert(listaOrdenada, { target = alvo, root = targetRoot })
                         end
                     else
                         alvosValidos[alvo] = nil
@@ -404,14 +434,13 @@ task.spawn(function()
                 end
                 
                 if #listaOrdenada > 0 then
-                    table.sort(listaOrdenada, function(a, b) return a.force < b.force end)
                     local alvoAtual = listaOrdenada[1]
                     
                     if alvoAtual then
                         myRoot.Velocity = Vector3.new(0,0,0)
                         myRoot.RotVelocity = Vector3.new(0,0,0)
                         myRoot.CFrame = alvoAtual.root.CFrame * CFrame.new(0, 0, 3)
-                        atacarBrawlAlvo()
+                        atacarBrawlAlvo(myChar)
                     end
                 end
             end
