@@ -2,7 +2,6 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -18,15 +17,17 @@ pcall(function()
 end)
 
 -- ==========================================
--- VARIÁVEIS DE CONTROLE GLOBAIS
+-- VARIÁVEIS DE CONTROLE GLOBAIS (ESTADOS PADRÃO)
 -- ==========================================
 local bossFarmActive = true
 local autoRebirth = true
 local autoPrompt = true
+local autoRep = true
 
 local autoJoin = true
-local autoKill = true
+local autoKill = false -- O Único desligado
 local autoReset = true
+
 local alvosValidos = {} 
 local modosDeAtaque = {"Punch", "Stomp", "Ground Slam"}
 local indexAtaque = 1
@@ -35,24 +36,21 @@ local currentAttackMode = modosDeAtaque[indexAtaque]
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
 
--- Lista de Bosses Completa (Ordem de prioridade)
 local validBossNames = {"Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
 
 -- ==========================================
--- CUSTOM SPAWN (NOVO LOCAL DE RENASCIMENTO)
+-- CUSTOM SPAWN (LOCAL FIXO DE RENASCIMENTO)
 -- ==========================================
 local function teleportarParaSpawn(character)
     local hrp = character:WaitForChild("HumanoidRootPart", 5)
     if hrp then
-        -- Teleporta instantaneamente para o local desejado ao nascer
+        task.wait(0.1) -- Pequeno delay para garantir que a física carregou
         hrp.CFrame = CFrame.new(0, 73, -1248)
     end
 end
 
--- Teleporta assim que executar o script
 if LocalPlayer.Character then teleportarParaSpawn(LocalPlayer.Character) end
 
--- Conecta para teleportar sempre que morrer e renascer
 LocalPlayer.CharacterAdded:Connect(function(character)
     teleportarParaSpawn(character)
 end)
@@ -99,7 +97,7 @@ local success = pcall(function() screenGui.Parent = CoreGui end)
 if not success then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 340)
+frame.Size = UDim2.new(0, 220, 0, 380)
 frame.AnchorPoint = Vector2.new(1, 0)
 frame.Position = UDim2.new(1, -20, 0.15, 0)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
@@ -150,13 +148,20 @@ local function criarBotao(nome, pos_Y, textoInit, corNormal, corBorda)
     return btn, stroke
 end
 
-local BossBtn, BossStroke       = criarBotao("BossBtn", 40, "[BOSS] Farm: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
-local JoinBtn, JoinStroke       = criarBotao("JoinBtn", 80, "[BRAWL] Auto Join: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
-local KillBtn, KillStroke       = criarBotao("KillBtn", 120, "[BRAWL] Auto Kill: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local colorOnNormal = Color3.fromRGB(50, 180, 50)
+local colorOnBorder = Color3.fromRGB(30, 120, 30)
+local colorOffNormal = Color3.fromRGB(180, 50, 50)
+local colorOffBorder = Color3.fromRGB(120, 30, 30)
+
+-- Botões iniciando com seus estados padrão definidos lá em cima
+local BossBtn, BossStroke       = criarBotao("BossBtn", 40, "[BOSS] Farm: ON", colorOnNormal, colorOnBorder)
+local JoinBtn, JoinStroke       = criarBotao("JoinBtn", 80, "[BRAWL] Auto Join: ON", colorOnNormal, colorOnBorder)
+local KillBtn, KillStroke       = criarBotao("KillBtn", 120, "[BRAWL] Auto Kill: OFF", colorOffNormal, colorOffBorder)
 local ModeBtn, ModeStroke       = criarBotao("ModeBtn", 160, "Modo: Punch", Color3.fromRGB(50, 100, 180), Color3.fromRGB(30, 60, 120))
-local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win Reset: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
-local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
-local PromptBtn, PromptStroke   = criarBotao("PromptBtn", 280, "[MISC] Auto Prompt: OFF", Color3.fromRGB(180, 50, 50), Color3.fromRGB(120, 30, 30))
+local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win Reset: ON", colorOnNormal, colorOnBorder)
+local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: ON", colorOnNormal, colorOnBorder)
+local PromptBtn, PromptStroke   = criarBotao("PromptBtn", 280, "[MISC] Auto Prompt: ON", colorOnNormal, colorOnBorder)
+local RepBtn, RepStroke         = criarBotao("RepBtn", 320, "[FARM] Auto Rep: ON", colorOnNormal, colorOnBorder)
 
 -- Arrastar Interface
 local dragging, dragInput, mousePos, framePos
@@ -177,8 +182,8 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 local function toggleButton(btn, stroke, state, textPrefix)
-    btn.BackgroundColor3 = state and Color3.fromRGB(50, 180, 50) or Color3.fromRGB(180, 50, 50)
-    stroke.Color = state and Color3.fromRGB(30, 120, 30) or Color3.fromRGB(120, 30, 30)
+    btn.BackgroundColor3 = state and colorOnNormal or colorOffNormal
+    stroke.Color = state and colorOnBorder or colorOffBorder
     btn.Text = textPrefix .. (state and "ON" or "OFF")
 end
 
@@ -188,6 +193,7 @@ KillBtn.MouseButton1Click:Connect(function() autoKill = not autoKill; toggleButt
 ResetBtn.MouseButton1Click:Connect(function() autoReset = not autoReset; toggleButton(ResetBtn, ResetStroke, autoReset, "[BRAWL] Auto Win Reset: ") end)
 RebirthBtn.MouseButton1Click:Connect(function() autoRebirth = not autoRebirth; toggleButton(RebirthBtn, RebirthStroke, autoRebirth, "[FARM] Auto Rebirth: ") end)
 PromptBtn.MouseButton1Click:Connect(function() autoPrompt = not autoPrompt; toggleButton(PromptBtn, PromptStroke, autoPrompt, "[MISC] Auto Prompt: ") end)
+RepBtn.MouseButton1Click:Connect(function() autoRep = not autoRep; toggleButton(RepBtn, RepStroke, autoRep, "[FARM] Auto Rep: ") end)
 
 ModeBtn.MouseButton1Click:Connect(function()
     indexAtaque = indexAtaque + 1
@@ -197,7 +203,7 @@ ModeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ==========================================
--- 3. FUNÇÕES DE UTILIDADE E VELOCIDADE DE ANIMAÇÃO
+-- 3. FUNÇÕES DE UTILIDADE E VELOCIDADE
 -- ==========================================
 local function equiparTool(toolName)
     local character = LocalPlayer.Character
@@ -211,14 +217,12 @@ local function equiparTool(toolName)
     end
 end
 
--- Acelera o PUNCH
 local function acelerarAnimacoes(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then
         local animator = humanoid:FindFirstChildOfClass("Animator")
         if animator then
             for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                -- Aumenta a velocidade da animação do soco para 4x mais rápido
                 track:AdjustSpeed(4) 
             end
         end
@@ -234,7 +238,6 @@ local function getPosition(instance)
     return nil
 end
 
--- Busca os Bosses da lista
 local function getActiveBossTarget()
     local events = workspace:FindFirstChild("Events")
     local arena = events and events:FindFirstChild("BossArena")
@@ -260,9 +263,8 @@ local function isInBrawl()
 end
 
 -- ==========================================
--- 4. SISTEMAS MISC (PROMPT E REBIRTH)
+-- 4. SISTEMAS MISC (PROMPT, REP E REBIRTH)
 -- ==========================================
--- Auto Prompt 
 task.spawn(function()
     while task.wait(0.05) do
         if autoPrompt then
@@ -275,14 +277,15 @@ task.spawn(function()
     end
 end)
 
--- Auto Rebirth 
+-- Auto Rep Fast Loop (Sem ferramentas)
 task.spawn(function()
-    while task.wait(0.1) do
-        if autoRebirth and not getActiveBossTarget() and not isInBrawl() then
-            equiparTool("Weight")
-            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Weight")
-            if tool then tool:Activate() end
-            pcall(function() LocalPlayer.muscleEvent:FireServer("rep") end)
+    while true do
+        task.wait(0.001)
+        if autoRep then
+            local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+            if muscleEvent then
+                pcall(function() muscleEvent:FireServer("rep") end)
+            end
         end
     end
 end)
@@ -299,7 +302,7 @@ end)
 -- 5. SISTEMA DO BOSS PRINCIPAL 
 -- ==========================================
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.05) do
         if bossFarmActive and not isInBrawl() then
             local boss = getActiveBossTarget()
             local character = LocalPlayer.Character
@@ -313,6 +316,9 @@ task.spawn(function()
                     if boss then
                         local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart or boss:FindFirstChildWhichIsA("BasePart")
                         if bossRoot then
+                            -- Speed Hack no Boss Loop
+                            humanoid.WalkSpeed = 100
+                            
                             local distanciaCostas = 4.5 
                             local posicaoCostas = bossRoot.Position - (bossRoot.CFrame.LookVector * distanciaCostas)
                             
@@ -322,7 +328,7 @@ task.spawn(function()
                             local tool = character:FindFirstChild("Punch")
                             if tool then 
                                 tool:Activate() 
-                                acelerarAnimacoes(character) -- Ativa a velocidade 4x no soco
+                                acelerarAnimacoes(character) 
                             end
                             
                             local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
@@ -334,6 +340,9 @@ task.spawn(function()
                             end
                         end
                     else
+                        -- Reseta a velocidade normal
+                        humanoid.WalkSpeed = 16 
+                        
                         local bossSpawn = arena:FindFirstChild("BossSpawn")
                         if bossSpawn then
                             local spawnPos = getPosition(bossSpawn)
@@ -343,6 +352,10 @@ task.spawn(function()
                         end
                     end
                 end
+            end
+        else
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.WalkSpeed = 16
             end
         end
     end
@@ -375,7 +388,7 @@ local function atacarBrawlAlvo(character)
         local tool = character:FindFirstChild("Punch")
         if tool then 
             tool:Activate()
-            acelerarAnimacoes(character) -- Velocidade rápida no Brawl também
+            acelerarAnimacoes(character)
         end
         pcall(function() muscleEvent:FireServer("punch", "leftHand"); muscleEvent:FireServer("punch", "rightHand") end)
     elseif currentAttackMode == "Stomp" then
@@ -425,7 +438,6 @@ task.spawn(function()
                     if alvo.Character and alvo.Character:FindFirstChild("HumanoidRootPart") and alvo.Character:FindFirstChild("Humanoid") and alvo.Character.Humanoid.Health > 0 then
                         local targetRoot = alvo.Character.HumanoidRootPart
                         if isDentroDasAreas(targetRoot.Position) then
-                            -- Força bruta ignorada na ordenação pois 50M foi removido, focamos apenas em distância ou alvos válidos
                             table.insert(listaOrdenada, { target = alvo, root = targetRoot })
                         end
                     else
