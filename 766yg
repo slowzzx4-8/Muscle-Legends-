@@ -3,7 +3,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
-local targetSpawnPos = Vector3.new(-2, 12, -1284)
+-- Spawnpoint subiu 20 studs (12 + 20 = 32)
+local targetSpawnPos = CFrame.new(-2, 32, -1284)
 
 -- ==========================================
 -- LIMPEZA DO MAPA
@@ -24,25 +25,29 @@ local autoRebirth = true
 local autoPrompt = true
 local autoRep = true
 local autoJoin = true
-local autoKill = false 
+local autoKill = false  -- Único desligado
 local autoReset = true
+local walkWaterActive = true
 
 local alvosValidos = {} 
-local modosDeAtaque = {"Punch", "Stomp", "Ground Slam"}
-local currentAttackMode = "Punch"
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local validBossNames = {"Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
 
 -- ==========================================
--- CUSTOM SPAWN
+-- CUSTOM SPAWN (FORÇADO AO MORRER)
 -- ==========================================
 local function teleportarParaSpawn(character)
     local hrp = character:WaitForChild("HumanoidRootPart", 5)
     if hrp then
-        task.wait(0.1)
-        hrp.CFrame = CFrame.new(targetSpawnPos)
+        task.spawn(function()
+            for i = 1, 5 do
+                hrp.CFrame = targetSpawnPos
+                task.wait(0.1)
+            end
+        end)
     end
 end
+
 if LocalPlayer.Character then teleportarParaSpawn(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(function(character) teleportarParaSpawn(character) end)
 
@@ -92,6 +97,21 @@ local function equiparTool(toolName)
     end
 end
 
+-- Equipa os pesos/cristais após o Rebirth
+local function equiparTreino()
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if char and backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and item.Name ~= "Punch" and item.Name ~= "Stomp" and item.Name ~= "Ground Slam" then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid:EquipTool(item) end
+                return
+            end
+        end
+    end
+end
+
 local function acelerarAnimacoes(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if humanoid then
@@ -133,6 +153,7 @@ end
 -- ==========================================
 local waterParts = {}
 local function setWalkWater(enabled)
+    walkWaterActive = enabled
     for _, p in ipairs(waterParts) do if p and p.Parent then p:Destroy() end end
     table.clear(waterParts)
     if not enabled then return end
@@ -149,6 +170,7 @@ local function setWalkWater(enabled)
         end
     end
 end
+setWalkWater(walkWaterActive)
 
 -- ==========================================
 -- LÓGICA DOS SISTEMAS
@@ -164,29 +186,37 @@ task.spawn(function()
     end
 end)
 
--- Auto Rep 5x
+-- Auto Rep 3x (Ajustado)
 task.spawn(function()
     while true do
         task.wait(0.001)
         if autoRep then
             local mEvent = LocalPlayer:FindFirstChild("muscleEvent")
             if mEvent then
-                pcall(function() for i=1, 5 do mEvent:FireServer("rep") end end)
+                pcall(function() for i=1, 3 do mEvent:FireServer("rep") end end)
             end
         end
     end
 end)
 
--- Auto Rebirth
+-- Auto Rebirth usando Gear
 task.spawn(function()
-    while task.wait(3) do
-        if autoRebirth and not getActiveBossTarget() and not isInBrawl() then
-            pcall(function() ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end)
+    while task.wait(2) do
+        if autoRebirth then
+            task.spawn(function()
+                pcall(function() 
+                    local res = ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") 
+                    if res then
+                        task.wait(0.5)
+                        equiparTreino() -- Puxa o item de treino novamente
+                    end
+                end)
+            end)
         end
     end
 end)
 
--- Boss Farm / Loop Movimentação
+-- Boss Farm / Loop Movimentação Legitima (Ajustado para andar e manter 5 studs)
 RunService.Heartbeat:Connect(function()
     if bossFarmActive and not isInBrawl() then
         local char = LocalPlayer.Character
@@ -203,18 +233,40 @@ RunService.Heartbeat:Connect(function()
                     local torso = boss:FindFirstChild("Torso") or boss:FindFirstChild("UpperTorso") or bossRoot
 
                     if bossRoot and torso then
-                        local posicaoCostas = bossRoot.Position - (bossRoot.CFrame.LookVector * 10)
-                        humanoid:MoveTo(posicaoCostas)
-                        hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(torso.Position.X, hrp.Position.Y, torso.Position.Z))
+                        -- Calcula a direção do Boss para o Player (ignorando Y para não bugar no chão)
+                        local flatTorso = Vector3.new(torso.Position.X, hrp.Position.Y, torso.Position.Z)
+                        local direcao = (hrp.Position - flatTorso).Unit
+                        if direcao.Magnitude ~= direcao.Magnitude then direcao = Vector3.new(0, 0, 1) end -- Evita NaN
+                        
+                        -- Define o alvo sempre a exatos 5 studs de distância do Boss
+                        local posAlvo = flatTorso + (direcao * 5)
+                        humanoid:MoveTo(posAlvo)
 
-                        equiparTool("Punch")
-                        local tool = char:FindFirstChild("Punch")
-                        if tool then tool:Activate(); acelerarAnimacoes(char) end
+                        -- Mantém o personagem virado para o Boss suavemente sem travar a caminhada
+                        local bg = hrp:FindFirstChild("BossBodyGyro")
+                        if not bg then
+                            bg = Instance.new("BodyGyro")
+                            bg.Name = "BossBodyGyro"
+                            bg.MaxTorque = Vector3.new(0, 400000, 0)
+                            bg.P = 15000
+                            bg.Parent = hrp
+                        end
+                        bg.CFrame = CFrame.lookAt(hrp.Position, flatTorso)
 
-                        local mEvent = LocalPlayer:FindFirstChild("muscleEvent")
-                        if mEvent then pcall(function() mEvent:FireServer("punch", "leftHand"); mEvent:FireServer("punch", "rightHand") end) end
+                        -- Ataca se estiver próximo o suficiente (distância <= 8 para margem de erro)
+                        if (hrp.Position - flatTorso).Magnitude <= 8 then
+                            equiparTool("Punch")
+                            local tool = char:FindFirstChild("Punch")
+                            if tool then tool:Activate(); acelerarAnimacoes(char) end
+
+                            local mEvent = LocalPlayer:FindFirstChild("muscleEvent")
+                            if mEvent then pcall(function() mEvent:FireServer("punch", "leftHand"); mEvent:FireServer("punch", "rightHand") end) end
+                        end
                     end
                 elseif arena then
+                    local bg = hrp:FindFirstChild("BossBodyGyro")
+                    if bg then bg:Destroy() end
+                    
                     local bossSpawn = arena:FindFirstChild("BossSpawn")
                     if bossSpawn then
                         local sPos = getPosition(bossSpawn)
@@ -225,6 +277,10 @@ RunService.Heartbeat:Connect(function()
         end
     else
         local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local bg = char.HumanoidRootPart:FindFirstChild("BossBodyGyro")
+            if bg then bg:Destroy() end
+        end
         if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = 16 end
     end
 end)
@@ -282,18 +338,10 @@ task.spawn(function()
                     
                     local mEvent = LocalPlayer:FindFirstChild("muscleEvent")
                     if mEvent then
-                        if currentAttackMode == "Punch" then
-                            equiparTool("Punch")
-                            local t = myChar:FindFirstChild("Punch")
-                            if t then t:Activate(); acelerarAnimacoes(myChar) end
-                            pcall(function() mEvent:FireServer("punch", "leftHand"); mEvent:FireServer("punch", "rightHand") end)
-                        elseif currentAttackMode == "Stomp" then
-                            equiparTool("Stomp")
-                            pcall(function() mEvent:FireServer("stomp") end)
-                        elseif currentAttackMode == "Ground Slam" then
-                            equiparTool("Ground Slam")
-                            pcall(function() mEvent:FireServer("groundSlam") end)
-                        end
+                        equiparTool("Punch")
+                        local t = myChar:FindFirstChild("Punch")
+                        if t then t:Activate(); acelerarAnimacoes(myChar) end
+                        pcall(function() mEvent:FireServer("punch", "leftHand"); mEvent:FireServer("punch", "rightHand") end)
                     end
                 end
             end
@@ -333,25 +381,19 @@ local CombatTab = Window:Tab({ Title = "Combat", Icon = "swords", Border = true 
 local FarmTab = Window:Tab({ Title = "Auto Farm", Icon = "dumbbell", Border = true })
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings", Border = true })
 
--- ABA 1: COMBAT (BRAWL & BOSS)
-CombatTab:Toggle({ Title = "Boss Farm", Default = true, Callback = function(v) bossFarmActive = v end })
+-- ABA 1: COMBAT (Dropdown de ataque removido, forçando Punch)
+CombatTab:Toggle({ Title = "Boss Farm (Legit)", Default = true, Callback = function(v) bossFarmActive = v end })
 CombatTab:Toggle({ Title = "Auto Join Brawl", Default = true, Callback = function(v) autoJoin = v end })
 CombatTab:Toggle({ Title = "Auto Kill Brawl", Default = false, Callback = function(v) autoKill = v end })
 CombatTab:Toggle({ Title = "Auto Win Reset", Default = true, Callback = function(v) autoReset = v end })
-CombatTab:Dropdown({ 
-    Title = "Attack Mode", 
-    Default = "Punch",
-    List = modosDeAtaque, 
-    Callback = function(v) currentAttackMode = v end 
-})
 
 -- ABA 2: AUTO FARM
-FarmTab:Toggle({ Title = "Auto Rep 5x (Super Fast)", Default = true, Callback = function(v) autoRep = v end })
-FarmTab:Toggle({ Title = "Auto Rebirth", Default = true, Callback = function(v) autoRebirth = v end })
+FarmTab:Toggle({ Title = "Auto Rep 3x", Default = true, Callback = function(v) autoRep = v end })
+FarmTab:Toggle({ Title = "Auto Rebirth (Equips Gear)", Default = true, Callback = function(v) autoRebirth = v end })
 
 -- ABA 3: MISC
 MiscTab:Toggle({ Title = "Auto Prompt", Default = true, Callback = function(v) autoPrompt = v end })
-MiscTab:Toggle({ Title = "Walk on Water", Default = false, Callback = function(v) setWalkWater(v) end })
+MiscTab:Toggle({ Title = "Walk on Water", Default = true, Callback = function(v) setWalkWater(v) end })
 
 -- INICIA UI
 task.wait(0.08)
