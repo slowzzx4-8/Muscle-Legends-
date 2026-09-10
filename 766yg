@@ -41,7 +41,8 @@ local currentAttackMode = modosDeAtaque[indexAtaque]
 local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
 local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
 
-local validBossNames = {"Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
+-- Adicionado BossRainbow como prioridade máxima
+local validBossNames = {"BossRainbow", "Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
 
 -- ==========================================
 -- CUSTOM SPAWN (LOCAL FIXO DE RENASCIMENTO)
