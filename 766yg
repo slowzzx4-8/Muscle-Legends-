@@ -1,5 +1,4 @@
 local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -16,16 +15,22 @@ pcall(function()
     if portals then portals:Destroy() end
 end)
 
+-- Hide / Remove lavaTouchParts
+pcall(function()
+    local lava = workspace:FindFirstChild("lavaTouchParts")
+    if lava then lava:Destroy() end
+end)
+
 -- ==========================================
 -- VARIÁVEIS DE CONTROLE GLOBAIS (ESTADOS PADRÃO)
 -- ==========================================
 local bossFarmActive = true
-local autoRebirth = true
+local autoRebirth = false          -- DESATIVADO
 local autoPrompt = true
 local autoRep = true
 
 local autoJoin = true
-local autoKill = false -- O Único desligado
+local autoKill = false
 local autoReset = true
 
 local alvosValidos = {} 
@@ -44,7 +49,7 @@ local validBossNames = {"Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
 local function teleportarParaSpawn(character)
     local hrp = character:WaitForChild("HumanoidRootPart", 5)
     if hrp then
-        task.wait(0.1) -- Pequeno delay para garantir que a física carregou
+        task.wait(0.1)
         hrp.CFrame = CFrame.new(0, 73, -1248)
     end
 end
@@ -88,118 +93,117 @@ local function isDentroDasAreas(posicao)
 end
 
 -- ==========================================
--- 2. INTERFACE GRÁFICA UNIFICADA (HUB)
+-- 2. VOID UI LIBRARY
 -- ==========================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ProSupremeHub"
-screenGui.ResetOnSpawn = false
-local success = pcall(function() screenGui.Parent = CoreGui end)
-if not success then screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/slowzzx4-8/Ui-library/refs/heads/main/Void%20Ui%20Library.lua"))()
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 380)
-frame.AnchorPoint = Vector2.new(1, 0)
-frame.Position = UDim2.new(1, -20, 0.15, 0)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-frame.Active = true
-frame.Parent = screenGui
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local Window = UI:CreateWindow({
+    Name = "SUPREME HUB",
+    Icon = "zap",
+    SideBarWidth = 160,
+    Theme = "Dark",
+    Transparent = true,
+    Author = "By Slowzzx4",
+    User = { Enabled = true, Anonymous = true },
+    Folder = "SupremeHub",
+})
 
-local frameStroke = Instance.new("UIStroke")
-frameStroke.Color = Color3.fromRGB(80, 80, 80)
-frameStroke.Thickness = 1.5
-frameStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-frameStroke.Parent = frame
+Window:EditOpenButton({
+    Title = "SUPREME HUB",
+    Icon = "zap",
+    Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(230, 230, 230)) }),
+    Transparency = 0.1,
+    StrokeThickness = 1.2,
+    AutoRotation = false,
+    Speed = 12,
+    CornerRadius = UDim.new(0, 16),
+})
 
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 30)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "SUPREME HUB"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.Font = Enum.Font.GothamBlack
-titleLabel.TextSize = 15
-titleLabel.Parent = frame
+-- Tab Principal
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "sword",
+    Border = true,
+})
 
-local divider = Instance.new("Frame")
-divider.Size = UDim2.new(1, 0, 0, 1)
-divider.Position = UDim2.new(0, 0, 0, 30)
-divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-divider.BorderSizePixel = 0
-divider.Parent = frame
-
-local function criarBotao(nome, pos_Y, textoInit, corNormal, corBorda)
-    local btn = Instance.new("TextButton")
-    btn.Name = nome
-    btn.Size = UDim2.new(1, -20, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, pos_Y)
-    btn.BackgroundColor3 = corNormal
-    btn.Text = textoInit
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    btn.AutoButtonColor = true
-    btn.Parent = frame
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = corBorda
-    stroke.Thickness = 1
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Parent = btn
-    return btn, stroke
-end
-
-local colorOnNormal = Color3.fromRGB(50, 180, 50)
-local colorOnBorder = Color3.fromRGB(30, 120, 30)
-local colorOffNormal = Color3.fromRGB(180, 50, 50)
-local colorOffBorder = Color3.fromRGB(120, 30, 30)
-
--- Botões iniciando com seus estados padrão definidos lá em cima
-local BossBtn, BossStroke       = criarBotao("BossBtn", 40, "[BOSS] Farm: ON", colorOnNormal, colorOnBorder)
-local JoinBtn, JoinStroke       = criarBotao("JoinBtn", 80, "[BRAWL] Auto Join: ON", colorOnNormal, colorOnBorder)
-local KillBtn, KillStroke       = criarBotao("KillBtn", 120, "[BRAWL] Auto Kill: OFF", colorOffNormal, colorOffBorder)
-local ModeBtn, ModeStroke       = criarBotao("ModeBtn", 160, "Modo: Punch", Color3.fromRGB(50, 100, 180), Color3.fromRGB(30, 60, 120))
-local ResetBtn, ResetStroke     = criarBotao("ResetBtn", 200, "[BRAWL] Auto Win Reset: ON", colorOnNormal, colorOnBorder)
-local RebirthBtn, RebirthStroke = criarBotao("RebirthBtn", 240, "[FARM] Auto Rebirth: ON", colorOnNormal, colorOnBorder)
-local PromptBtn, PromptStroke   = criarBotao("PromptBtn", 280, "[MISC] Auto Prompt: ON", colorOnNormal, colorOnBorder)
-local RepBtn, RepStroke         = criarBotao("RepBtn", 320, "[FARM] Auto Rep: ON", colorOnNormal, colorOnBorder)
-
--- Arrastar Interface
-local dragging, dragInput, mousePos, framePos
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true; mousePos = input.Position; framePos = frame.Position
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+MainTab:Toggle({
+    Title = "Boss Farm",
+    Default = bossFarmActive,
+    Callback = function(Value)
+        bossFarmActive = Value
     end
-end)
-frame.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - mousePos
-        frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+})
+
+MainTab:Toggle({
+    Title = "Auto Join (Brawl)",
+    Default = autoJoin,
+    Callback = function(Value)
+        autoJoin = Value
     end
-end)
+})
 
-local function toggleButton(btn, stroke, state, textPrefix)
-    btn.BackgroundColor3 = state and colorOnNormal or colorOffNormal
-    stroke.Color = state and colorOnBorder or colorOffBorder
-    btn.Text = textPrefix .. (state and "ON" or "OFF")
-end
+MainTab:Toggle({
+    Title = "Auto Kill (Brawl)",
+    Default = autoKill,
+    Callback = function(Value)
+        autoKill = Value
+    end
+})
 
-BossBtn.MouseButton1Click:Connect(function() bossFarmActive = not bossFarmActive; toggleButton(BossBtn, BossStroke, bossFarmActive, "[BOSS] Farm: ") end)
-JoinBtn.MouseButton1Click:Connect(function() autoJoin = not autoJoin; toggleButton(JoinBtn, JoinStroke, autoJoin, "[BRAWL] Auto Join: ") end)
-KillBtn.MouseButton1Click:Connect(function() autoKill = not autoKill; toggleButton(KillBtn, KillStroke, autoKill, "[BRAWL] Auto Kill: ") end)
-ResetBtn.MouseButton1Click:Connect(function() autoReset = not autoReset; toggleButton(ResetBtn, ResetStroke, autoReset, "[BRAWL] Auto Win Reset: ") end)
-RebirthBtn.MouseButton1Click:Connect(function() autoRebirth = not autoRebirth; toggleButton(RebirthBtn, RebirthStroke, autoRebirth, "[FARM] Auto Rebirth: ") end)
-PromptBtn.MouseButton1Click:Connect(function() autoPrompt = not autoPrompt; toggleButton(PromptBtn, PromptStroke, autoPrompt, "[MISC] Auto Prompt: ") end)
-RepBtn.MouseButton1Click:Connect(function() autoRep = not autoRep; toggleButton(RepBtn, RepStroke, autoRep, "[FARM] Auto Rep: ") end)
+MainTab:Toggle({
+    Title = "Auto Win Reset",
+    Default = autoReset,
+    Callback = function(Value)
+        autoReset = Value
+    end
+})
 
-ModeBtn.MouseButton1Click:Connect(function()
-    indexAtaque = indexAtaque + 1
-    if indexAtaque > #modosDeAtaque then indexAtaque = 1 end
-    currentAttackMode = modosDeAtaque[indexAtaque]
-    ModeBtn.Text = "Modo: " .. currentAttackMode
+MainTab:Dropdown({
+    Title = "Modo de Ataque",
+    Option = modosDeAtaque,
+    Value = currentAttackMode,
+    Callback = function(Value)
+        if Value then
+            currentAttackMode = Value
+        end
+    end
+})
+
+-- Tab Farm
+local FarmTab = Window:Tab({
+    Title = "Farm",
+    Icon = "dumbbell",
+    Border = true,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Rebirth",
+    Default = autoRebirth,
+    Callback = function(Value)
+        autoRebirth = Value
+    end
+})
+
+FarmTab:Toggle({
+    Title = "Auto Rep",
+    Default = autoRep,
+    Callback = function(Value)
+        autoRep = Value
+    end
+})
+
+FarmTab:Toggle({
+    Title = "Auto Prompt",
+    Default = autoPrompt,
+    Callback = function(Value)
+        autoPrompt = Value
+    end
+})
+
+task.wait(0.08)
+pcall(function()
+    Window:SelectTab(1)
+    Window:Open()
 end)
 
 -- ==========================================
@@ -277,7 +281,6 @@ task.spawn(function()
     end
 end)
 
--- Auto Rep Fast Loop (Sem ferramentas)
 task.spawn(function()
     while true do
         task.wait(0.001)
@@ -316,7 +319,6 @@ task.spawn(function()
                     if boss then
                         local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart or boss:FindFirstChildWhichIsA("BasePart")
                         if bossRoot then
-                            -- Speed Hack no Boss Loop
                             humanoid.WalkSpeed = 100
                             
                             local distanciaCostas = 4.5 
@@ -340,7 +342,6 @@ task.spawn(function()
                             end
                         end
                     else
-                        -- Reseta a velocidade normal
                         humanoid.WalkSpeed = 16 
                         
                         local bossSpawn = arena:FindFirstChild("BossSpawn")
@@ -367,6 +368,7 @@ end)
 local function atualizarAlvos(player, nomeDoMapa)
     if mapasAlvo[nomeDoMapa] and player ~= LocalPlayer then alvosValidos[player] = true else alvosValidos[player] = nil end
 end
+
 local function monitorarJogador(player)
     if player == LocalPlayer then return end
     local currentMap = player:WaitForChild("currentMap", 10)
@@ -375,6 +377,7 @@ local function monitorarJogador(player)
         currentMap:GetPropertyChangedSignal("Value"):Connect(function() atualizarAlvos(player, currentMap.Value) end)
     end
 end
+
 for _, player in ipairs(Players:GetPlayers()) do task.spawn(monitorarJogador, player) end
 Players.PlayerAdded:Connect(function(p) task.spawn(monitorarJogador, p) end)
 Players.PlayerRemoving:Connect(function(p) alvosValidos[p] = nil end)
