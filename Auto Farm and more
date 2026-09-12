@@ -1,0 +1,465 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- LIMPEZA DO MAPA (REMOÇÃO DE OBSTÁCULOS/PORTAIS)
+-- ==========================================
+pcall(function() workspace.Events.BossArena.RefreshBoss:Destroy() end)
+pcall(function() workspace.PetMachine:Destroy() end)
+pcall(function() workspace.Events.BossArena.Board:Destroy() end)
+pcall(function()
+    local portals = workspace:FindFirstChild("RobloxForwardPortals")
+    if portals then portals:Destroy() end
+end)
+
+-- Hide / Remove lavaTouchParts
+pcall(function()
+    local lava = workspace:FindFirstChild("lavaTouchParts")
+    if lava then lava:Destroy() end
+end)
+
+-- ==========================================
+-- VARIÁVEIS DE CONTROLE GLOBAIS (ESTADOS PADRÃO)
+-- ==========================================
+local bossFarmActive = true
+local autoRebirth = false          -- DESATIVADO
+local autoPrompt = true
+local autoRep = true
+
+local autoJoin = true
+local autoKill = false
+local autoReset = true
+
+local alvosValidos = {} 
+local modosDeAtaque = {"Punch", "Stomp", "Ground Slam"}
+local indexAtaque = 1
+local currentAttackMode = modosDeAtaque[indexAtaque]
+
+local mapasAlvo = { ["Magma Ring"] = true, ["Desert Ring"] = true, ["Boxing Ring"] = true }
+local multiplicadores = { ["k"]=1e3, ["m"]=1e6, ["b"]=1e9, ["t"]=1e12, ["q"]=1e15, ["qi"]=1e18, ["sx"]=1e21, ["sp"]=1e24 }
+
+-- Adicionado BossRainbow como prioridade máxima
+local validBossNames = {"BossRainbow", "Boss5", "Boss4", "Boss3", "Boss2", "Boss1"}
+
+-- ==========================================
+-- CUSTOM SPAWN (LOCAL FIXO DE RENASCIMENTO)
+-- ==========================================
+local function teleportarParaSpawn(character)
+    local hrp = character:WaitForChild("HumanoidRootPart", 5)
+    if hrp then
+        task.wait(0.1)
+        hrp.CFrame = CFrame.new(0, 73, -1248)
+    end
+end
+
+if LocalPlayer.Character then teleportarParaSpawn(LocalPlayer.Character) end
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    teleportarParaSpawn(character)
+end)
+
+-- ==========================================
+-- 1. CRIAÇÃO DAS ÁREAS INVISÍVEIS (BRAWL)
+-- ==========================================
+local function criarAreaInvisivel(nome, posX, posY, posZ, sizeX, sizeY, sizeZ)
+    if workspace:FindFirstChild(nome) then workspace[nome]:Destroy() end
+    local part = Instance.new("Part")
+    part.Name = nome
+    part.Size = Vector3.new(sizeX, sizeY, sizeZ)
+    part.Position = Vector3.new(posX, posY, posZ)
+    part.Anchored = true
+    part.CanCollide = false
+    part.Transparency = 1
+    part.Parent = workspace
+    return part
+end
+
+local Area1 = criarAreaInvisivel("BrawlArea1", 4465, 177, -8851, 552, 400, 548)
+local Area2 = criarAreaInvisivel("BrawlArea2", -1856.5, 175, -6315, 499, 400, 496)
+local Area3 = criarAreaInvisivel("BrawlArea3", 978, 177, -7433, 502, 400, 504)
+
+local function isDentroDasAreas(posicao)
+    local areas = {Area1, Area2, Area3}
+    for _, area in ipairs(areas) do
+        local offset = area.CFrame:PointToObjectSpace(posicao)
+        local size = area.Size
+        if math.abs(offset.X) <= size.X/2 and math.abs(offset.Y) <= size.Y/2 and math.abs(offset.Z) <= size.Z/2 then
+            return true
+        end
+    end
+    return false
+end
+
+-- ==========================================
+-- 2. VOID UI LIBRARY
+-- ==========================================
+local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/slowzzx4-8/Ui-library/refs/heads/main/Void%20Ui%20Library.lua"))()
+
+local Window = UI:CreateWindow({
+    Name = "SUPREME HUB",
+    Icon = "zap",
+    SideBarWidth = 160,
+    Theme = "Dark",
+    Transparent = true,
+    Author = "By Slowzzx4",
+    User = { Enabled = true, Anonymous = true },
+    Folder = "SupremeHub",
+})
+
+Window:EditOpenButton({
+    Title = "SUPREME HUB",
+    Icon = "zap",
+    Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(230, 230, 230)) }),
+    Transparency = 0.1,
+    StrokeThickness = 1.2,
+    AutoRotation = false,
+    Speed = 12,
+    CornerRadius = UDim.new(0, 16),
+})
+
+-- Tab Principal
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "sword",
+    Border = true,
+})
+
+MainTab:Toggle({
+    Title = "Boss Farm",
+    Default = bossFarmActive,
+    Callback = function(Value)
+        bossFarmActive = Value
+    end
+})
+
+MainTab:Toggle({
+    Title = "Auto Join (Brawl)",
+    Default = autoJoin,
+    Callback = function(Value)
+        autoJoin = Value
+    end
+})
+
+MainTab:Toggle({
+    Title = "Auto Kill (Brawl)",
+    Default = autoKill,
+    Callback = function(Value)
+        autoKill = Value
+    end
+})
+
+MainTab:Toggle({
+    Title = "Auto Win Reset",
+    Default = autoReset,
+    Callback = function(Value)
+        autoReset = Value
+    end
+})
+
+MainTab:Dropdown({
+    Title = "Modo de Ataque",
+    Option = modosDeAtaque,
+    Value = currentAttackMode,
+    Callback = function(Value)
+        if Value then
+            currentAttackMode = Value
+        end
+    end
+})
+
+-- Tab Farm
+local FarmTab = Window:Tab({
+    Title = "Farm",
+    Icon = "dumbbell",
+    Border = true,
+})
+
+FarmTab:Toggle({
+    Title = "Auto Rebirth",
+    Default = autoRebirth,
+    Callback = function(Value)
+        autoRebirth = Value
+    end
+})
+
+FarmTab:Toggle({
+    Title = "Auto Rep",
+    Default = autoRep,
+    Callback = function(Value)
+        autoRep = Value
+    end
+})
+
+FarmTab:Toggle({
+    Title = "Auto Prompt",
+    Default = autoPrompt,
+    Callback = function(Value)
+        autoPrompt = Value
+    end
+})
+
+task.wait(0.08)
+pcall(function()
+    Window:SelectTab(1)
+    Window:Open()
+end)
+
+-- ==========================================
+-- 3. FUNÇÕES DE UTILIDADE E VELOCIDADE
+-- ==========================================
+local function equiparTool(toolName)
+    local character = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if character and backpack then
+        local tool = backpack:FindFirstChild(toolName) or character:FindFirstChild(toolName)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if tool and humanoid and not character:FindFirstChild(toolName) then 
+            humanoid:EquipTool(tool) 
+        end
+    end
+end
+
+local function acelerarAnimacoes(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local animator = humanoid:FindFirstChildOfClass("Animator")
+        if animator then
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                track:AdjustSpeed(4) 
+            end
+        end
+    end
+end
+
+local function getPosition(instance)
+    if instance:IsA("Model") then
+        return instance:GetPivot().Position
+    elseif instance:IsA("BasePart") then
+        return instance.Position
+    end
+    return nil
+end
+
+local function getActiveBossTarget()
+    local events = workspace:FindFirstChild("Events")
+    local arena = events and events:FindFirstChild("BossArena")
+    
+    if arena then
+        for _, bossName in ipairs(validBossNames) do
+            local boss = arena:FindFirstChild(bossName)
+            if boss then
+                local isAlive = true
+                if boss:FindFirstChild("Humanoid") and boss.Humanoid.Health <= 0 then
+                    isAlive = false
+                end
+                if isAlive then return boss end
+            end
+        end
+    end
+    return nil
+end
+
+local function isInBrawl()
+    local currentMap = LocalPlayer:FindFirstChild("currentMap")
+    return (currentMap and mapasAlvo[currentMap.Value])
+end
+
+-- ==========================================
+-- 4. SISTEMAS MISC (PROMPT, REP E REBIRTH)
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.05) do
+        if autoPrompt then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") and obj.Enabled then
+                    pcall(function() fireproximityprompt(obj, 1, true) end)
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.001)
+        if autoRep then
+            local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+            if muscleEvent then
+                pcall(function() muscleEvent:FireServer("rep") end)
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(3) do
+        if autoRebirth and not getActiveBossTarget() and not isInBrawl() then
+            pcall(function() ReplicatedStorage.rEvents.rebirthRemote:InvokeServer("rebirthRequest") end)
+        end
+    end
+end)
+
+-- ==========================================
+-- 5. SISTEMA DO BOSS PRINCIPAL 
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.05) do
+        if bossFarmActive and not isInBrawl() then
+            local boss = getActiveBossTarget()
+            local character = LocalPlayer.Character
+            
+            if character and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+                local humanoid = character.Humanoid
+                local events = workspace:FindFirstChild("Events")
+                local arena = events and events:FindFirstChild("BossArena")
+                
+                if arena then
+                    if boss then
+                        local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart or boss:FindFirstChildWhichIsA("BasePart")
+                        if bossRoot then
+                            humanoid.WalkSpeed = 100
+                            
+                            local distanciaCostas = 4.5 
+                            local posicaoCostas = bossRoot.Position - (bossRoot.CFrame.LookVector * distanciaCostas)
+                            
+                            humanoid:MoveTo(posicaoCostas)
+                            
+                            equiparTool("Punch")
+                            local tool = character:FindFirstChild("Punch")
+                            if tool then 
+                                tool:Activate() 
+                                acelerarAnimacoes(character) 
+                            end
+                            
+                            local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+                            if muscleEvent then
+                                pcall(function()
+                                    muscleEvent:FireServer("punch", "leftHand")
+                                    muscleEvent:FireServer("punch", "rightHand")
+                                end)
+                            end
+                        end
+                    else
+                        humanoid.WalkSpeed = 16 
+                        
+                        local bossSpawn = arena:FindFirstChild("BossSpawn")
+                        if bossSpawn then
+                            local spawnPos = getPosition(bossSpawn)
+                            if spawnPos then
+                                humanoid:MoveTo(spawnPos)
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid.WalkSpeed = 16
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- 6. SISTEMA BRAWL (JOIN, KILL, RESET)
+-- ==========================================
+local function atualizarAlvos(player, nomeDoMapa)
+    if mapasAlvo[nomeDoMapa] and player ~= LocalPlayer then alvosValidos[player] = true else alvosValidos[player] = nil end
+end
+
+local function monitorarJogador(player)
+    if player == LocalPlayer then return end
+    local currentMap = player:WaitForChild("currentMap", 10)
+    if currentMap then
+        atualizarAlvos(player, currentMap.Value)
+        currentMap:GetPropertyChangedSignal("Value"):Connect(function() atualizarAlvos(player, currentMap.Value) end)
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do task.spawn(monitorarJogador, player) end
+Players.PlayerAdded:Connect(function(p) task.spawn(monitorarJogador, p) end)
+Players.PlayerRemoving:Connect(function(p) alvosValidos[p] = nil end)
+
+local function atacarBrawlAlvo(character)
+    local muscleEvent = LocalPlayer:FindFirstChild("muscleEvent")
+    if not muscleEvent then return end
+
+    if currentAttackMode == "Punch" then
+        equiparTool("Punch")
+        local tool = character:FindFirstChild("Punch")
+        if tool then 
+            tool:Activate()
+            acelerarAnimacoes(character)
+        end
+        pcall(function() muscleEvent:FireServer("punch", "leftHand"); muscleEvent:FireServer("punch", "rightHand") end)
+    elseif currentAttackMode == "Stomp" then
+        equiparTool("Stomp")
+        pcall(function() muscleEvent:FireServer("stomp") end)
+    elseif currentAttackMode == "Ground Slam" then
+        equiparTool("Ground Slam")
+        pcall(function() muscleEvent:FireServer("groundSlam") end)
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if autoJoin and not getActiveBossTarget() then
+            pcall(function() ReplicatedStorage.rEvents.brawlEvent:FireServer("joinBrawl") end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if autoReset then
+            local pGui = LocalPlayer:FindFirstChild("PlayerGui")
+            if pGui and pGui:FindFirstChild("gameGui") then
+                local survivorBonus = pGui.gameGui:FindFirstChild("survivorBonusLabel")
+                if survivorBonus and survivorBonus.Visible then
+                    local myChar = LocalPlayer.Character
+                    if myChar and myChar:FindFirstChild("Humanoid") and myChar.Humanoid.Health > 0 then
+                        myChar.Humanoid.Health = 0 
+                        task.wait(5) 
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.05) do 
+        if autoKill and isInBrawl() then
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            
+            if myRoot then
+                local listaOrdenada = {}
+                for alvo, _ in pairs(alvosValidos) do
+                    if alvo.Character and alvo.Character:FindFirstChild("HumanoidRootPart") and alvo.Character:FindFirstChild("Humanoid") and alvo.Character.Humanoid.Health > 0 then
+                        local targetRoot = alvo.Character.HumanoidRootPart
+                        if isDentroDasAreas(targetRoot.Position) then
+                            table.insert(listaOrdenada, { target = alvo, root = targetRoot })
+                        end
+                    else
+                        alvosValidos[alvo] = nil
+                    end
+                end
+                
+                if #listaOrdenada > 0 then
+                    local alvoAtual = listaOrdenada[1]
+                    
+                    if alvoAtual then
+                        myRoot.Velocity = Vector3.new(0,0,0)
+                        myRoot.RotVelocity = Vector3.new(0,0,0)
+                        myRoot.CFrame = alvoAtual.root.CFrame * CFrame.new(0, 0, 3)
+                        atacarBrawlAlvo(myChar)
+                    end
+                end
+            end
+        end
+    end
+end)
