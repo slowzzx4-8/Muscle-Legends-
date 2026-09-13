@@ -320,7 +320,7 @@ task.spawn(function()
                     if boss then
                         local bossRoot = boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart or boss:FindFirstChildWhichIsA("BasePart")
                         if bossRoot then
-                            humanoid.WalkSpeed = 100
+                            humanoid.WalkSpeed = 500
                             
                             local distanciaCostas = 4.5 
                             local posicaoCostas = bossRoot.Position - (bossRoot.CFrame.LookVector * distanciaCostas)
