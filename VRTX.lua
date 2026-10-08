@@ -27,7 +27,7 @@ end
 local Camera = Workspace.CurrentCamera
 local NormalClockTime = Lighting.ClockTime
 
-local CONFIG_PATH = "SupremeHub/MuscleLegends.json"
+local CONFIG_PATH = "MuscleLegends.json"
 local CLICK_SOUND_ID = "rbxassetid://2818606146"
 
 -- polyfills
